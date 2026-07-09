@@ -95,6 +95,7 @@
 #include "gc/shared/weakProcessor.inline.hpp"
 #include "gc/shared/workerPolicy.hpp"
 #include "logging/log.hpp"
+#include "logging/logStream.hpp"
 #include "memory/allocation.hpp"
 #include "memory/heapInspection.hpp"
 #include "memory/iterator.hpp"
@@ -110,6 +111,7 @@
 #include "runtime/handles.inline.hpp"
 #include "runtime/init.hpp"
 #include "runtime/java.hpp"
+#include "runtime/javaThread.hpp"
 #include "runtime/orderAccess.hpp"
 #include "runtime/threadSMR.hpp"
 #include "runtime/vmThread.hpp"
@@ -120,6 +122,28 @@
 #include "utilities/stack.inline.hpp"
 
 size_t G1CollectedHeap::_humongous_object_threshold_in_words = 0;
+
+static void log_humongous_allocation(HeapWord* result, size_t word_size) {
+  LogTarget(Debug, gc, humongous) lt;
+  if (!lt.is_enabled()) {
+    return;
+  }
+
+  Thread* current = Thread::current();
+  const char* thread_name = current->name();
+
+  LogStream ls(lt);
+  ls.print_cr("Humongous allocation succeeded: object " PTR_FORMAT
+              ", size %zu words (%zu bytes), thread \"%s\"",
+              p2i(result), word_size, word_size * HeapWordSize,
+              thread_name != nullptr ? thread_name : "<unknown>");
+  if (current->is_Java_thread()) {
+    ls.print_cr("Java stack for humongous allocation:");
+    JavaThread::cast(current)->print_stack_on(&ls);
+  } else {
+    ls.print_cr("No Java stack: current thread is not a JavaThread");
+  }
+}
 
 // INVARIANTS/NOTES
 //
@@ -666,8 +690,7 @@ HeapWord* G1CollectedHeap::attempt_allocation_humongous(size_t word_size) {
   // Case b) is the only case when we'll return null.
   HeapWord* result = nullptr;
   for (uint try_count = 1; /* we'll return */; try_count++) {
-    uint gc_count_before;
-
+    uint gc_count_before = 0;
 
     {
       MutexLocker x(Heap_lock);
@@ -680,11 +703,15 @@ HeapWord* G1CollectedHeap::attempt_allocation_humongous(size_t word_size) {
       if (result != nullptr) {
         policy()->old_gen_alloc_tracker()->
           add_allocated_humongous_bytes_since_last_gc(size_in_regions * G1HeapRegion::GrainBytes);
-        return result;
+      } else {
+        // Read the GC count while still holding the Heap_lock.
+        gc_count_before = total_collections();
       }
+    }
 
-      // Read the GC count while still holding the Heap_lock.
-      gc_count_before = total_collections();
+    if (result != nullptr) {
+      log_humongous_allocation(result, word_size);
+      return result;
     }
 
     bool succeeded;
@@ -696,6 +723,7 @@ HeapWord* G1CollectedHeap::attempt_allocation_humongous(size_t word_size) {
         size_t size_in_regions = humongous_obj_size_in_regions(word_size);
         policy()->old_gen_alloc_tracker()->
           record_collection_pause_humongous_allocation(size_in_regions * G1HeapRegion::GrainBytes);
+        log_humongous_allocation(result, word_size);
       }
       return result;
     }
