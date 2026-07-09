@@ -25,6 +25,9 @@
 
 package jdk.internal.misc;
 
+import jdk.internal.event.UnsafeAllocateMemoryEvent;
+import jdk.internal.event.UnsafeFreeMemoryEvent;
+import jdk.internal.event.UnsafeReallocateMemoryEvent;
 import jdk.internal.ref.Cleaner;
 import jdk.internal.vm.annotation.ForceInline;
 import jdk.internal.vm.annotation.IntrinsicCandidate;
@@ -629,11 +632,20 @@ public final class Unsafe {
 
         allocateMemoryChecks(bytes);
 
+        boolean eventEnabled = UnsafeAllocateMemoryEvent.enabled();
+        long start = eventEnabled ? UnsafeAllocateMemoryEvent.timestamp() : 0L;
+
         if (bytes == 0) {
+            if (eventEnabled) {
+                UnsafeAllocateMemoryEvent.offer(start, bytes, 0);
+            }
             return 0;
         }
 
         long p = allocateMemory0(bytes);
+        if (eventEnabled) {
+            UnsafeAllocateMemoryEvent.offer(start, bytes, p);
+        }
         if (p == 0) {
             throw new OutOfMemoryError("Unable to allocate " + bytes + " bytes");
         }
@@ -684,12 +696,21 @@ public final class Unsafe {
 
         reallocateMemoryChecks(address, bytes);
 
+        boolean eventEnabled = UnsafeReallocateMemoryEvent.enabled();
+        long start = eventEnabled ? UnsafeReallocateMemoryEvent.timestamp() : 0L;
+
         if (bytes == 0) {
             freeMemory(address);
+            if (eventEnabled) {
+                UnsafeReallocateMemoryEvent.offer(start, address, bytes, 0);
+            }
             return 0;
         }
 
         long p = (address == 0) ? allocateMemory0(bytes) : reallocateMemory0(address, bytes);
+        if (eventEnabled) {
+            UnsafeReallocateMemoryEvent.offer(start, address, bytes, p);
+        }
         if (p == 0) {
             throw new OutOfMemoryError("Unable to allocate " + bytes + " bytes");
         }
@@ -923,11 +944,20 @@ public final class Unsafe {
     public void freeMemory(long address) {
         freeMemoryChecks(address);
 
+        boolean eventEnabled = UnsafeFreeMemoryEvent.enabled();
+        long start = eventEnabled ? UnsafeFreeMemoryEvent.timestamp() : 0L;
+
         if (address == 0) {
+            if (eventEnabled) {
+                UnsafeFreeMemoryEvent.offer(start, address);
+            }
             return;
         }
 
         freeMemory0(address);
+        if (eventEnabled) {
+            UnsafeFreeMemoryEvent.offer(start, address);
+        }
     }
 
     /**
