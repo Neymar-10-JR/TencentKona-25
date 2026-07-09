@@ -278,6 +278,17 @@ bool CompilationPolicy::is_trivial(const methodHandle& method) {
   return false;
 }
 
+static bool requires_full_profile(const methodHandle& method) {
+  return CompilerOracle::has_option(method, CompileCommandEnum::RequireFullProfile);
+}
+
+static CompLevel require_full_profile_level(CompLevel level) {
+  if (CompilationModeFlag::normal() && level > CompLevel_none && level < CompLevel_full_profile) {
+    return CompLevel_full_profile;
+  }
+  return level;
+}
+
 bool CompilationPolicy::force_comp_at_level_simple(const methodHandle& method) {
   if (CompilationModeFlag::quick_internal()) {
 #if INCLUDE_JVMCI
@@ -807,7 +818,7 @@ CompileTask* CompilationPolicy::select_task(CompileQueue* compile_queue, JavaThr
   methodHandle max_method_h(THREAD, max_method);
 
   if (max_task != nullptr && max_task->comp_level() == CompLevel_full_profile && TieredStopAtLevel > CompLevel_full_profile &&
-      max_method != nullptr && is_method_profiled(max_method_h) && !Arguments::is_compiler_only()) {
+      max_method != nullptr && is_method_profiled(max_method_h) && !requires_full_profile(max_method_h) && !Arguments::is_compiler_only()) {
     max_task->set_comp_level(CompLevel_limited_profile);
 
     if (CompileBroker::compilation_is_complete(max_method_h, max_task->osr_bci(), CompLevel_limited_profile)) {
@@ -1297,9 +1308,10 @@ template<typename Predicate>
 CompLevel CompilationPolicy::common(const methodHandle& method, CompLevel cur_level, JavaThread* THREAD, bool disable_feedback) {
   CompLevel next_level = cur_level;
 
-  if (force_comp_at_level_simple(method)) {
+  bool require_full_profile = requires_full_profile(method);
+  if (!require_full_profile && force_comp_at_level_simple(method)) {
     next_level = CompLevel_simple;
-  } else if (is_trivial(method) || method->is_native()) {
+  } else if (!require_full_profile && (is_trivial(method) || method->is_native())) {
     // We do not care if there is profiling data for these methods, throw them to compiler.
     next_level = CompilationModeFlag::disable_intermediate() ? CompLevel_full_optimization : CompLevel_simple;
   } else if (MethodTrainingData::have_data()) {
@@ -1319,6 +1331,9 @@ CompLevel CompilationPolicy::common(const methodHandle& method, CompLevel cur_le
     }
   } else {
     next_level = standard_transition<Predicate>(method, cur_level, false /*delay_profiling*/, disable_feedback);
+  }
+  if (require_full_profile) {
+    next_level = require_full_profile_level(next_level);
   }
   return (next_level != cur_level) ? limit_level(next_level) : next_level;
 }
@@ -1367,7 +1382,8 @@ CompLevel CompilationPolicy::transition_from_none(const methodHandle& method, Co
     // we introduce a feedback on the C2 queue size. If the C2 queue is sufficiently long
     // we choose to compile a limited profiled version and then recompile with full profiling
     // when the load on C2 goes down.
-    if (delay_profiling || (!disable_feedback && CompileBroker::queue_size(CompLevel_full_optimization) > Tier3DelayOn * compiler_count(CompLevel_full_optimization))) {
+    if (!requires_full_profile(method) &&
+        (delay_profiling || (!disable_feedback && CompileBroker::queue_size(CompLevel_full_optimization) > Tier3DelayOn * compiler_count(CompLevel_full_optimization)))) {
       next_level = CompLevel_limited_profile;
     } else {
       next_level = CompLevel_full_profile;
@@ -1399,6 +1415,9 @@ template<typename Predicate>
 CompLevel CompilationPolicy::transition_from_limited_profile(const methodHandle& method, CompLevel cur_level, bool delay_profiling, bool disable_feedback) {
   precond(cur_level == CompLevel_limited_profile);
   CompLevel next_level = cur_level;
+  if (requires_full_profile(method)) {
+    return is_method_profiled(method) ? CompLevel_full_optimization : CompLevel_full_profile;
+  }
   int i = method->invocation_count();
   int b = method->backedge_count();
   MethodData* mdo = method->method_data();
@@ -1553,4 +1572,3 @@ void CompilationPolicy::method_back_branch_event(const methodHandle& mh, const m
     }
   }
 }
-
