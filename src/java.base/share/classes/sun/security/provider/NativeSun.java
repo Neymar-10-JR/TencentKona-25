@@ -30,8 +30,6 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SymbolLookup;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
-import java.security.AccessController;
-import java.security.PrivilegedAction;
 
 /**
  * The native implementation with OpenSSL for Sun algorithms.
@@ -49,33 +47,12 @@ final class NativeSun {
         OpenSSLSM3 openSSLSM3 = null;
         if (enableNativeCrypto
                 // OpenSSL crypto lib must be loaded at first
-                && OpenSSLUtil.isOpenSSLLoaded()
-                && loadSunCryptoLib()) {
+                && OpenSSLUtil.isOpenSSLLoaded()) {
             openSSLSM3 = OpenSSLSM3.tryCreate();
         }
 
         OPENSSL_SM3 = openSSLSM3;
         IS_NATIVE_CRYPTO_ENABLED = openSSLSM3 != null;
-    }
-
-    // Load lib suncrypto
-    @SuppressWarnings("removal")
-    private static boolean loadSunCryptoLib() {
-        boolean loaded = true;
-        try {
-            AccessController.doPrivileged(
-                    new PrivilegedAction<Void>() {
-                        @SuppressWarnings("restricted")
-                        public Void run() {
-                            System.loadLibrary("suncrypto");
-                            return null;
-                        }
-                    });
-        } catch (UnsatisfiedLinkError e) {
-            System.err.println("Failed to load suncrypto: " + e);
-            loaded = false;
-        }
-        return loaded;
     }
 
     static boolean isNativeCryptoEnabled() {
