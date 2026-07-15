@@ -23,6 +23,7 @@
  */
 
 #include "classfile/classLoaderDataGraph.hpp"
+#include "classfile/javaClasses.hpp"
 #include "classfile/metadataOnStackMark.hpp"
 #include "classfile/systemDictionary.hpp"
 #include "code/codeCache.hpp"
@@ -95,7 +96,6 @@
 #include "gc/shared/weakProcessor.inline.hpp"
 #include "gc/shared/workerPolicy.hpp"
 #include "logging/log.hpp"
-#include "logging/logStream.hpp"
 #include "memory/allocation.hpp"
 #include "memory/heapInspection.hpp"
 #include "memory/iterator.hpp"
@@ -119,6 +119,7 @@
 #include "utilities/autoRestore.hpp"
 #include "utilities/bitMap.inline.hpp"
 #include "utilities/globalDefinitions.hpp"
+#include "utilities/ostream.hpp"
 #include "utilities/stack.inline.hpp"
 
 size_t G1CollectedHeap::_humongous_object_threshold_in_words = 0;
@@ -130,19 +131,35 @@ static void log_humongous_allocation(HeapWord* result, size_t word_size) {
   }
 
   Thread* current = Thread::current();
-  const char* thread_name = current->name();
-
-  LogStream ls(lt);
-  ls.print_cr("Humongous allocation succeeded: object " PTR_FORMAT
-              ", size %zu words (%zu bytes), thread \"%s\"",
-              p2i(result), word_size, word_size * HeapWordSize,
-              thread_name != nullptr ? thread_name : "<unknown>");
+  stringStream ss;
   if (current->is_Java_thread()) {
-    ls.print_cr("Java stack for humongous allocation:");
-    JavaThread::cast(current)->print_stack_on(&ls);
+    ResourceMark rm(current);
+    JavaThread* java_thread = JavaThread::cast(current);
+    const char* thread_name = current->name();
+    oop java_thread_oop = java_thread->vthread_or_thread();
+    if (java_thread_oop != nullptr) {
+      oop name = java_lang_Thread::name(java_thread_oop);
+      if (name != nullptr) {
+        thread_name = java_lang_String::as_utf8_string(name);
+      }
+    }
+
+    ss.print_cr("Humongous allocation succeeded: object " PTR_FORMAT
+                ", size %zu words (%zu bytes), thread \"%s\"",
+                p2i(result), word_size, word_size * HeapWordSize,
+                thread_name != nullptr ? thread_name : "<unknown>");
+    ss.print_cr("Java stack for humongous allocation:");
+    java_thread->print_active_stack_on(&ss);
   } else {
-    ls.print_cr("No Java stack: current thread is not a JavaThread");
+    const char* thread_name = current->name();
+    ss.print_cr("Humongous allocation succeeded: object " PTR_FORMAT
+                ", size %zu words (%zu bytes), thread \"%s\"",
+                p2i(result), word_size, word_size * HeapWordSize,
+                thread_name != nullptr ? thread_name : "<unknown>");
+    ss.print_cr("No Java stack: current thread is not a JavaThread");
   }
+
+  log_debug(gc, humongous)("%s", ss.as_string());
 }
 
 // INVARIANTS/NOTES
