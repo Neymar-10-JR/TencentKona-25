@@ -103,7 +103,7 @@ public class UnsafeMemoryEvents {
 
     @State(Scope.Thread)
     public static class AllocateState {
-        @Param({"64", "1024"})
+        @Param({"0", "64", "1024"})
         public long size;
 
         long address;
@@ -119,7 +119,7 @@ public class UnsafeMemoryEvents {
 
     @State(Scope.Thread)
     public static class ReallocateState {
-        @Param({"64", "1024"})
+        @Param({"0", "64", "1024"})
         public long size;
 
         long address;
@@ -140,7 +140,7 @@ public class UnsafeMemoryEvents {
 
     @State(Scope.Thread)
     public static class FreeState {
-        @Param({"64", "1024"})
+        @Param({"0", "64", "1024"})
         public long size;
 
         long address;
