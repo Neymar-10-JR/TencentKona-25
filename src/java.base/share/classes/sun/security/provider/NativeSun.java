@@ -46,7 +46,7 @@ final class NativeSun {
                 "jdk.sun.enableNativeCrypto");
         OpenSSLSM3 openSSLSM3 = null;
         if (enableNativeCrypto
-                // OpenSSL crypto lib must be loaded at first
+                // OpenSSL libcrypto must be loaded before FFM resolves its symbols.
                 && OpenSSLUtil.isOpenSSLLoaded()) {
             openSSLSM3 = OpenSSLSM3.tryCreate();
         }
@@ -76,6 +76,7 @@ final class NativeSun {
         sm3.digest(message, out, outOffset);
     }
 
+    // FFM downcalls replace the previous libsuncrypto JNI bridge.
     private static final class OpenSSLSM3 {
 
         private final MethodHandle evpSM3;

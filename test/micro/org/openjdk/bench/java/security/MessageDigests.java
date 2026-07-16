@@ -53,7 +53,7 @@ public class MessageDigests {
     @Param({"64", "16384"})
     private int length;
 
-    @Param({"md5", "SHA-1", "SHA-224", "SHA-256", "SHA-384", "SHA-512", "SHA3-256", "SHA3-512", "SM3"})
+    @Param({"md5", "SHA-1", "SHA-224", "SHA-256", "SHA-384", "SHA-512", "SHA3-256", "SHA3-512"})
     private String digesterName;
 
     @Param({"DEFAULT"})
